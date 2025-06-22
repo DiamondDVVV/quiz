@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Quiz Player</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="container">
+    <div id="waiting-screen">
+      <h1>Waiting for the host to start the game...</h1>
+      <div class="loader"></div>
+    </div>
+
+    <div id="question-screen" class="hidden">
+      <div class="question-header">
+        <span id="question-number">Question 1/10</span>
+      </div>
+
+      <div class="question-container">
+        <h2 id="question-text"></h2>
+        <div id="options-container"></div>
+      </div>
+
+      <div id="feedback" class="hidden"></div>
+    </div>
+
+    <div id="leaderboard-screen" class="hidden">
+      <h1>Leaderboard</h1>
+      <div id="leaderboard"></div>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+      <h1>Game Over!</h1>
+      <h2>Final Results</h2>
+      <div id="final-leaderboard"></div>
+      <button id="new-game-btn">New Game</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const gameId = urlParams.get('gameId');
+    let playerName = localStorage.getItem('playerName');
+
+    // If playerName doesn't exist yet, prompt for it
+    if (!playerName) {
+      playerName = prompt("Enter your name:");
+      if (playerName) {
+        localStorage.setItem('playerName', playerName);
+      } else {
+        alert("Name is required!");
+        window.location.href = "/";
+      }
+    }
+
+    // Reconnect to the game with stored name
+    socket.emit('reconnectPlayer', { gameId, playerName });
+
+    const waitingScreen = document.getElementById('waiting-screen');
+    const questionScreen = document.getElementById('question-screen');
+    const leaderboardScreen = document.getElementById('leaderboard-screen');
+    const gameOverScreen = document.getElementById('game-over-screen');
+
+    const questionNumberElement = document.getElementById('question-number');
+    const questionTextElement = document.getElementById('question-text');
+    const optionsContainer = document.getElementById('options-container');
+    const feedbackElement = document.getElementById('feedback');
+    const leaderboardElement = document.getElementById('leaderboard');
+    const finalLeaderboardElement = document.getElementById('final-leaderboard');
+    const newGameBtn = document.getElementById('new-game-btn');
+
+    let hasAnswered = false;
+
+    socket.on('gameStarted', () => {
+      waitingScreen.classList.add('hidden');
+      questionScreen.classList.remove('hidden');
+    });
+
+    socket.on('newQuestion', (data) => {
+      hasAnswered = false;
+
+      questionNumberElement.textContent = `Question ${data.questionNumber}/${data.totalQuestions}`;
+      questionTextElement.textContent = data.question;
+
+      optionsContainer.innerHTML = '';
+      data.options.forEach(option => {
+        const button = document.createElement('button');
+        button.className = 'option-btn';
+        button.textContent = option;
+        button.addEventListener('click', () => {
+          if (!hasAnswered) {
+            selectAnswer(option);
+          }
+        });
+        optionsContainer.appendChild(button);
+      });
+
+      feedbackElement.classList.add('hidden');
+
+      leaderboardScreen.classList.add('hidden');
+      questionScreen.classList.remove('hidden');
+    });
+
+    socket.on('answerResult', (data) => {
+      feedbackElement.classList.remove('hidden');
+      if (data.correct) {
+        feedbackElement.textContent = 'Correct!';
+        feedbackElement.className = 'feedback correct';
+      } else {
+        feedbackElement.textContent = `Incorrect. The correct answer is: ${data.correctAnswer}`;
+        feedbackElement.className = 'feedback incorrect';
+      }
+
+      const optionButtons = document.querySelectorAll('.option-btn');
+      optionButtons.forEach(button => {
+        button.disabled = true;
+        if (button.textContent === data.correctAnswer) {
+          button.classList.add('correct-answer');
+        }
+      });
+    });
+
+    socket.on('leaderboardUpdate', (data) => {
+      updateLeaderboard(data.leaderboard);
+      questionScreen.classList.add('hidden');
+      leaderboardScreen.classList.remove('hidden');
+    });
+
+    socket.on('gameOver', (data) => {
+      updateFinalLeaderboard(data.leaderboard);
+      questionScreen.classList.add('hidden');
+      leaderboardScreen.classList.add('hidden');
+      gameOverScreen.classList.remove('hidden');
+    });
+
+    socket.on('hostLeft', () => {
+      alert('The host has left the game.');
+      window.location.href = '/';
+    });
+
+    newGameBtn.addEventListener('click', () => {
+      window.location.href = '/';
+    });
+
+    function selectAnswer(answer) {
+      hasAnswered = true;
+      socket.emit('submitAnswer', { gameId, answer });
+
+      const optionButtons = document.querySelectorAll('.option-btn');
+      optionButtons.forEach(button => {
+        if (button.textContent !== answer) {
+          button.disabled = true;
+        }
+      });
+    }
+
+    function updateLeaderboard(leaderboard) {
+      leaderboardElement.innerHTML = '';
+      leaderboard.forEach((player, index) => {
+        const div = document.createElement('div');
+        div.className = 'leaderboard-item';
+        div.innerHTML = `
+          <span class="rank">${index + 1}</span>
+          <span class="name">${player.name}</span>
+          <span class="score">${player.score}</span>
+        `;
+        leaderboardElement.appendChild(div);
+      });
+    }
+
+    function updateFinalLeaderboard(leaderboard) {
+      finalLeaderboardElement.innerHTML = '';
+      leaderboard.forEach((player, index) => {
+        const div = document.createElement('div');
+        div.className = 'leaderboard-item';
+        div.innerHTML = `
+          <span class="rank">${index + 1}</span>
+          <span class="name">${player.name}</span>
+          <span class="score">${player.score}</span>
+        `;
+        finalLeaderboardElement.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>
