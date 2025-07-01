@@ -2,85 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Quiz Monitor</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Quiz Game Lobby</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <div class="container">
-    <div id="join-screen">
-      <h1>Monitor Quiz Game</h1>
-      <input type="text" id="game-code" placeholder="Enter Game Code" />
-      <button id="join-btn">Join Game</button>
-    </div>
+    <h1>Welcome to the Quiz Game!</h1>
 
-    <div id="monitor-screen" class="hidden">
-      <h2 id="question-text">Waiting for question...</h2>
-      <ul id="options-list"></ul>
-      <h3>Leaderboard</h3>
-      <div id="leaderboard"></div>
+    <input type="text" id="name" placeholder="Enter Your Name" />
+    <input type="text" id="code" placeholder="Enter Game Code (for Join or Monitor)" />
+
+    <div class="button-group">
+      <button id="host-btn">🎮 Create Game</button>
+      <button id="join-btn">🙋 Join Game</button>
+      <button id="monitor-btn">👀 Monitor Game</button>
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
-    const joinScreen = document.getElementById('join-screen');
-    const monitorScreen = document.getElementById('monitor-screen');
-    const questionText = document.getElementById('question-text');
-    const optionsList = document.getElementById('options-list');
-    const leaderboard = document.getElementById('leaderboard');
-    const joinBtn = document.getElementById('join-btn');
-    const gameCodeInput = document.getElementById('game-code');
-
-    joinBtn.onclick = () => {
-      const gameId = gameCodeInput.value.trim().toUpperCase();
-      if (gameId) {
-        socket.emit('monitorGame', gameId);
-        joinScreen.classList.add('hidden');
-        monitorScreen.classList.remove('hidden');
-      }
+    document.getElementById('host-btn').onclick = () => {
+      // Just go to host.html, let it create game there
+      location.href = '/host.html';
     };
 
-    socket.on('newQuestion', (data) => {
-      questionText.textContent = `Q${data.questionNumber}: ${data.question}`;
-      optionsList.innerHTML = '';
-      data.options.forEach(opt => {
-        const li = document.createElement('li');
-        li.textContent = opt;
-        optionsList.appendChild(li);
-      });
-    });
+    document.getElementById('join-btn').onclick = () => {
+      const name = document.getElementById('name').value.trim();
+      const code = document.getElementById('code').value.trim().toUpperCase();
 
-    socket.on('leaderboardUpdate', (data) => {
-      leaderboard.innerHTML = '';
-      data.leaderboard.forEach((player, index) => {
-        const div = document.createElement('div');
-        div.className = 'leaderboard-item';
-        div.innerHTML = `
-          <span class="rank">${index + 1}</span>
-          <span class="name">${player.name}</span>
-          <span class="score">${player.score}</span>
-        `;
-        leaderboard.appendChild(div);
-      });
-    });
+      if (!name || !code) return alert('Enter name and game code!');
+      localStorage.setItem('playerName', name);
+      location.href = `/player.html?gameId=${code}`;
+    };
 
-    socket.on('gameOver', (data) => {
-      questionText.textContent = 'Game Over';
-      optionsList.innerHTML = '';
-      leaderboard.innerHTML = '';
-      data.leaderboard.forEach((player, index) => {
-        const div = document.createElement('div');
-        div.className = 'leaderboard-item';
-        div.innerHTML = `
-          <span class="rank">${index + 1}</span>
-          <span class="name">${player.name}</span>
-          <span class="score">${player.score}</span>
-        `;
-        leaderboard.appendChild(div);
-      });
-    });
+    document.getElementById('monitor-btn').onclick = () => {
+      const code = document.getElementById('code').value.trim().toUpperCase();
+      if (!code) return alert('Enter game code!');
+      location.href = `/monitor.html?gameId=${code}`;
+    };
   </script>
 </body>
 </html>
