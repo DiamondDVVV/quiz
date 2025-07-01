@@ -1,152 +1,140 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Quiz Host</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Quiz Host</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <div id="lobby-screen">
-      <h1>Quiz Lobby</h1>
-      <div class="game-code">Game Code: <span id="game-code"></span></div>
-      <div class="player-list"><h2>Players</h2><ul id="players"></ul></div>
-      <button id="start-btn" disabled>Start Game (waiting for players)</button>
-    </div>
-
-    <div id="question-screen" class="hidden">
-      <span id="question-number">Question 1/10</span>
-      <div id="timer">60s</div>
-      <h2 id="question-text"></h2>
-      <ul id="answers-list"></ul>
-      <button id="next-btn">Next Question</button>
-    </div>
-
-    <div id="leaderboard-screen" class="hidden">
-      <h1>Leaderboard</h1><div id="leaderboard"></div>
-      <button id="continue-btn">Continue</button>
-    </div>
-
-    <div id="game-over-screen" class="hidden">
-      <h1>Game Over!</h1><div id="final-leaderboard"></div>
-      <button id="new-game-btn">New Game</button>
-    </div>
+<div class="container">
+  <div id="lobby-screen">
+    <h1>Quiz Lobby</h1>
+    <div class="game-code">Game Code: <span id="game-code"></span></div>
+    <div class="player-list"><h2>Players</h2><ul id="players"></ul></div>
+    <button id="start-btn" disabled>Start Game (waiting for players)</button>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    let gameId = new URLSearchParams(location.search).get('gameId');
-    if (gameId) localStorage.setItem('hostGameId', gameId);
-    else gameId = localStorage.getItem('hostGameId');
+  <div id="question-screen" class="hidden">
+    <span id="question-number">Question 1/10</span>
+    <h2 id="question-text"></h2>
+    <ul id="answers-list"></ul>
+    <button id="next-btn">Next Question</button>
+    <button id="show-leaderboard-btn">Show Leaderboard</button>
+  </div>
+  
+  <div id="leaderboard-screen" class="hidden">
+    <h1>Leaderboard</h1><div id="leaderboard"></div>
+    <button id="continue-btn">Continue</button>
+  </div>
+  
+  <div id="game-over-screen" class="hidden">
+    <h1>Game Over!</h1><div id="final-leaderboard"></div>
+    <button id="new-game-btn">New Game</button>
+  </div>
+</div>
 
-    socket.on('connect', () => {
-      if (gameId) socket.emit('reconnectHost', gameId);
-    });
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let gameId = new URLSearchParams(location.search).get('gameId');
+if (gameId) localStorage.setItem('hostGameId', gameId);
+else gameId = localStorage.getItem('hostGameId');
 
-    const players = {};
-    const ui = {
-      lobby: document.getElementById('lobby-screen'),
-      question: document.getElementById('question-screen'),
-      leaderboard: document.getElementById('leaderboard-screen'),
-      gameOver: document.getElementById('game-over-screen'),
-      code: document.getElementById('game-code'),
-      list: document.getElementById('players'),
-      start: document.getElementById('start-btn'),
-      qnum: document.getElementById('question-number'),
-      qtxt: document.getElementById('question-text'),
-      answers: document.getElementById('answers-list'),
-      next: document.getElementById('next-btn'),
-      lb: document.getElementById('leaderboard'),
-      cont: document.getElementById('continue-btn'),
-      finalLb: document.getElementById('final-leaderboard'),
-      newGame: document.getElementById('new-game-btn'),
-      timer: document.getElementById('timer')
-    };
+socket.on('connect', () => {
+  if (gameId) socket.emit('reconnectHost', gameId);
+});
 
-    ui.code.textContent = gameId;
+const players = {};
+const ui = {
+  lobby: document.getElementById('lobby-screen'),
+  question: document.getElementById('question-screen'),
+  leaderboard: document.getElementById('leaderboard-screen'),
+  gameOver: document.getElementById('game-over-screen'),
+  code: document.getElementById('game-code'),
+  list: document.getElementById('players'),
+  start: document.getElementById('start-btn'),
+  qnum: document.getElementById('question-number'),
+  qtxt: document.getElementById('question-text'),
+  answers: document.getElementById('answers-list'),
+  next: document.getElementById('next-btn'),
+  showLb: document.getElementById('show-leaderboard-btn'),
+  lb: document.getElementById('leaderboard'),
+  cont: document.getElementById('continue-btn'),
+  finalLb: document.getElementById('final-leaderboard'),
+  newGame: document.getElementById('new-game-btn')
+};
 
-    function updateLobby() {
-      ui.list.innerHTML = '';
-      Object.values(players).forEach(name => {
-        const li = document.createElement('li');
-        li.textContent = name;
-        ui.list.append(li);
-      });
-      ui.start.disabled = !Object.keys(players).length;
-    }
+ui.code.textContent = gameId;
 
-    let countdown;
-    function startTimer(seconds) {
-      clearInterval(countdown);
-      let timeLeft = seconds;
-      ui.timer.textContent = `${timeLeft}s`;
-      countdown = setInterval(() => {
-        timeLeft--;
-        ui.timer.textContent = `${timeLeft}s`;
-        if (timeLeft <= 0) clearInterval(countdown);
-      }, 1000);
-    }
+function updateLobby() {
+  ui.list.innerHTML = '';
+  Object.values(players).forEach(name => {
+    const li = document.createElement('li');
+    li.textContent = name;
+    ui.list.append(li);
+  });
+  ui.start.disabled = !Object.keys(players).length;
+}
 
-    socket.on('playerJoined', ({ playerId, playerName }) => {
-      players[playerId] = playerName;
-      updateLobby();
-    });
+socket.on('playerJoined', ({ playerId, playerName }) => {
+  players[playerId] = playerName;
+  updateLobby();
+});
 
-    socket.on('playerLeft', playerId => {
-      delete players[playerId];
-      updateLobby();
-    });
+socket.on('playerLeft', playerId => {
+  delete players[playerId];
+  updateLobby();
+});
 
-    socket.on('newQuestion', data => {
-      ui.lobby.classList.add('hidden');
-      ui.leaderboard.classList.add('hidden');
-      ui.question.classList.remove('hidden');
-      ui.answers.innerHTML = '';
-      ui.qnum.textContent = `Question ${data.questionNumber}/${data.totalQuestions}`;
-      ui.qtxt.textContent = data.question;
-      startTimer(60);
-    });
+socket.on('newQuestion', data => {
+  ui.lobby.classList.add('hidden');
+  ui.leaderboard.classList.add('hidden');
+  ui.question.classList.remove('hidden');
+  ui.answers.innerHTML = '';
+  ui.qnum.textContent = `Question ${data.questionNumber}/${data.totalQuestions}`;
+  ui.qtxt.textContent = data.question;
+});
 
-    socket.on('leaderboardUpdate', data => {
-      clearInterval(countdown);
-      ui.question.classList.add('hidden');
-      ui.leaderboard.classList.remove('hidden');
-      ui.lb.innerHTML = '';
-      data.leaderboard.forEach((p, i) => {
-        const d = document.createElement('div');
-        d.innerText = `${i + 1}. ${p.name} — ${p.score}`;
-        ui.lb.append(d);
-      });
-    });
+socket.on('playerAnswered', () => { /* handled elsewhere if needed */ });
 
-    socket.on('gameOver', data => {
-      clearInterval(countdown);
-      ui.question.classList.add('hidden');
-      ui.leaderboard.classList.add('hidden');
-      ui.gameOver.classList.remove('hidden');
-      ui.finalLb.innerHTML = '';
-      data.leaderboard.forEach((p, i) => {
-        const d = document.createElement('div');
-        d.innerText = `${i + 1}. ${p.name} — ${p.score}`;
-        ui.finalLb.append(d);
-      });
-    });
+socket.on('leaderboardUpdate', data => {
+  ui.question.classList.add('hidden');
+  ui.leaderboard.classList.remove('hidden');
+  ui.lb.innerHTML = '';
+  data.leaderboard.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.innerText = `${i+1}. ${p.name} — ${p.score}`;
+    ui.lb.append(d);
+  });
+});
 
-    socket.on('hostLeft', () => {
-      alert('Host disconnected. Returning to home.');
-      localStorage.removeItem('hostGameId');
-      location.href = '/';
-    });
+socket.on('gameOver', data => {
+  ui.question.classList.add('hidden');
+  ui.leaderboard.classList.add('hidden');
+  ui.gameOver.classList.remove('hidden');
+  ui.finalLb.innerHTML = '';
+  data.leaderboard.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.innerText = `${i+1}. ${p.name} — ${p.score}`;
+    ui.finalLb.append(d);
+  });
+});
 
-    ui.start.onclick = () => socket.emit('startGame', gameId);
-    ui.next.onclick = () => socket.emit('nextQuestion', gameId);
-    ui.cont.onclick = () => socket.emit('nextQuestion', gameId);
-    ui.newGame.onclick = () => {
-      localStorage.removeItem('hostGameId');
-      location.href = '/';
-    };
-  </script>
+socket.on('hostLeft', () => {
+  alert('Host disconnected. Returning to home.');
+  localStorage.removeItem('hostGameId');
+  location.href = '/';
+});
+
+ui.start.onclick = () => socket.emit('startGame', gameId);
+ui.next.onclick = () => socket.emit('nextQuestion', gameId);
+ui.showLb.onclick = () => socket.emit('showLeaderboard', gameId);
+ui.cont.onclick = () => socket.emit('nextQuestion', gameId);
+ui.newGame.onclick = () => {
+  localStorage.removeItem('hostGameId');
+  location.href = '/';
+};
+</script>
 </body>
 </html>
