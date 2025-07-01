@@ -20,8 +20,8 @@
 
     <div id="question-screen" class="hidden">
       <div class="question-header">
-        <span id="question-number">Question 1/10</span>
-        <span id="timer">60</span>
+        <span id="question-number">Question</span>
+        <span id="timer">60s</span>
       </div>
       <div class="question-container">
         <h2 id="question-text"></h2>
@@ -41,6 +41,7 @@
 
     <div id="game-over-screen" class="hidden">
       <h1>Game Over!</h1>
+      <h2>Final Results</h2>
       <div id="final-leaderboard"></div>
       <button id="new-game-btn">New Game</button>
     </div>
@@ -49,33 +50,30 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const urlParams = new URLSearchParams(window.location.search);
-    const gameId = urlParams.get('gameId');
+    const gameId = new URLSearchParams(window.location.search).get('gameId');
 
-    document.getElementById('game-code').textContent = gameId;
+    const gameCodeElement = document.getElementById('game-code');
+    const playersElement = document.getElementById('players');
     const startBtn = document.getElementById('start-btn');
     const nextBtn = document.getElementById('next-btn');
     const continueBtn = document.getElementById('continue-btn');
-    const newGameBtn = document.getElementById('new-game-btn');
-    const playersEl = document.getElementById('players');
-    const answersList = document.getElementById('answers-list');
-    const questionNumberEl = document.getElementById('question-number');
-    const questionTextEl = document.getElementById('question-text');
-    const timerEl = document.getElementById('timer');
-    const leaderboardEl = document.getElementById('leaderboard');
-    const finalLeaderboardEl = document.getElementById('final-leaderboard');
+    const questionNumberElement = document.getElementById('question-number');
+    const questionTextElement = document.getElementById('question-text');
+    const answersListElement = document.getElementById('answers-list');
+    const leaderboardElement = document.getElementById('leaderboard');
+    const finalLeaderboardElement = document.getElementById('final-leaderboard');
+    const timerElement = document.getElementById('timer');
 
     let players = {};
-    let timer;
-    let timeLeft = 60;
+    let timerInterval = null;
 
     socket.emit('reconnectHost', gameId);
+    gameCodeElement.textContent = gameId;
 
     socket.on('playerJoined', data => {
-      players[data.playerId] = { name: data.playerName };
+      players[data.playerId] = { name: data.playerName, answered: false };
       updatePlayersList();
       startBtn.disabled = false;
-      startBtn.textContent = 'Start Game';
     });
 
     socket.on('playerLeft', playerId => {
@@ -83,27 +81,27 @@
       updatePlayersList();
       if (Object.keys(players).length === 0) {
         startBtn.disabled = true;
-        startBtn.textContent = 'Start Game (waiting for players)';
       }
     });
 
     socket.on('newQuestion', data => {
+      questionNumberElement.textContent = `Question ${data.questionNumber}/${data.totalQuestions}`;
+      questionTextElement.textContent = data.question;
+      answersListElement.innerHTML = '';
+      Object.keys(players).forEach(id => players[id].answered = false);
+      startTimer();
       document.getElementById('lobby-screen').classList.add('hidden');
       document.getElementById('leaderboard-screen').classList.add('hidden');
       document.getElementById('question-screen').classList.remove('hidden');
+    });
 
-      questionNumberEl.textContent = `Question ${data.questionNumber}/${data.totalQuestions}`;
-      questionTextEl.textContent = data.question;
-
-      answersList.innerHTML = '';
-      resetTimer();
+    socket.on('timerUpdate', secs => {
+      timerElement.textContent = `${secs}s`;
     });
 
     socket.on('playerAnswered', data => {
-      const li = document.createElement('li');
-      li.textContent = `${data.playerName}: ${data.correct ? '✓' : '✗'}`;
-      li.className = data.correct ? 'correct' : 'incorrect';
-      answersList.appendChild(li);
+      players[data.playerId].answered = true;
+      updateAnswersList();
     });
 
     socket.on('leaderboardUpdate', data => {
@@ -119,68 +117,48 @@
       document.getElementById('game-over-screen').classList.remove('hidden');
     });
 
-    startBtn.addEventListener('click', () => {
-      socket.emit('startGame', gameId);
-    });
-
-    nextBtn.addEventListener('click', () => {
-      stopTimer();
-      socket.emit('nextQuestion', gameId);
-    });
-
-    continueBtn.addEventListener('click', () => {
-      socket.emit('nextQuestion', gameId);
-    });
-
-    newGameBtn.addEventListener('click', () => {
-      window.location.href = '/';
-    });
+    startBtn.addEventListener('click', () => socket.emit('startGame', gameId));
+    nextBtn.addEventListener('click', () => socket.emit('nextQuestion', gameId));
+    continueBtn.addEventListener('click', () => socket.emit('nextQuestion', gameId));
+    document.getElementById('new-game-btn').addEventListener('click', () => location.href = '/');
 
     function updatePlayersList() {
-      playersEl.innerHTML = '';
+      playersElement.innerHTML = '';
       for (const id in players) {
         const li = document.createElement('li');
         li.textContent = players[id].name;
-        playersEl.appendChild(li);
+        playersElement.appendChild(li);
+      }
+    }
+
+    function updateAnswersList() {
+      answersListElement.innerHTML = '';
+      for (const id in players) {
+        if (players[id].answered) {
+          const li = document.createElement('li');
+          li.textContent = `${players[id].name}: Answered`;
+          answersListElement.appendChild(li);
+        }
       }
     }
 
     function updateLeaderboard(lb) {
-      leaderboardEl.innerHTML = '';
+      leaderboardElement.innerHTML = '';
       lb.forEach((p, i) => {
-        const div = document.createElement('div');
-        div.className = 'leaderboard-item';
-        div.innerHTML = `<span class="rank">${i+1}</span><span class="name">${p.name}</span><span class="score">${p.score}</span>`;
-        leaderboardEl.appendChild(div);
+        leaderboardElement.innerHTML += `<div class="leaderboard-item"><span>${i + 1}</span> <span>${p.name}</span> <span>${p.score}</span></div>`;
       });
     }
 
     function updateFinalLeaderboard(lb) {
-      finalLeaderboardEl.innerHTML = '';
+      finalLeaderboardElement.innerHTML = '';
       lb.forEach((p, i) => {
-        const div = document.createElement('div');
-        div.className = 'leaderboard-item';
-        div.innerHTML = `<span class="rank">${i+1}</span><span class="name">${p.name}</span><span class="score">${p.score}</span>`;
-        finalLeaderboardEl.appendChild(div);
+        finalLeaderboardElement.innerHTML += `<div class="leaderboard-item"><span>${i + 1}</span> <span>${p.name}</span> <span>${p.score}</span></div>`;
       });
     }
 
-    function resetTimer() {
-      stopTimer();
-      timeLeft = 60;
-      timerEl.textContent = timeLeft;
-      timer = setInterval(() => {
-        timeLeft--;
-        timerEl.textContent = timeLeft;
-        if (timeLeft <= 0) {
-          stopTimer();
-          socket.emit('showLeaderboard', gameId);
-        }
-      }, 1000);
-    }
-
-    function stopTimer() {
-      clearInterval(timer);
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {}, 1000); // placeholder, server sends updates
     }
   </script>
 </body>
