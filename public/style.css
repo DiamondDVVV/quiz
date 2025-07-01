@@ -234,3 +234,10 @@ li {
     padding: 1.5rem;
   }
 }
+.game-timer {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 1rem 0;
+  text-align: center;
+  color: #fff;
+}
