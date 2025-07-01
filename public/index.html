@@ -2,44 +2,63 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Quiz Game Lobby</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Live Quiz Game</title>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
   <div class="container">
-    <h1>Welcome to the Quiz Game!</h1>
+    <h1>Live Quiz Game</h1>
 
-    <input type="text" id="name" placeholder="Enter Your Name" />
-    <input type="text" id="code" placeholder="Enter Game Code (for Join or Monitor)" />
+    <div class="card">
+      <h2>Create or Join a Game</h2>
 
-    <div class="button-group">
-      <button id="host-btn">🎮 Create Game</button>
-      <button id="join-btn">🙋 Join Game</button>
-      <button id="monitor-btn">👀 Monitor Game</button>
+      <div class="option-box">
+        <h3>Create a New Game</h3>
+        <p>Be the quiz host and control the game</p>
+        <button id="create-btn">Create Game</button>
+      </div>
+
+      <div class="option-box">
+        <h3>Join a Game</h3>
+        <input type="text" id="game-id-input" placeholder="Enter Game Code" />
+        <input type="text" id="player-name-input" placeholder="Your Name" />
+        <button id="join-btn">Join Game</button>
+      </div>
     </div>
   </div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    document.getElementById('host-btn').onclick = () => {
-      // Just go to host.html, let it create game there
-      location.href = '/host.html';
-    };
+    const socket = io();
 
-    document.getElementById('join-btn').onclick = () => {
-      const name = document.getElementById('name').value.trim();
-      const code = document.getElementById('code').value.trim().toUpperCase();
+    document.getElementById("create-btn").addEventListener("click", () => {
+      socket.emit("createGame");
+    });
 
-      if (!name || !code) return alert('Enter name and game code!');
-      localStorage.setItem('playerName', name);
-      location.href = `/player.html?gameId=${code}`;
-    };
+    socket.on("gameCreated", (gameId) => {
+      window.location.href = `/host.html?gameId=${gameId}`;
+    });
 
-    document.getElementById('monitor-btn').onclick = () => {
-      const code = document.getElementById('code').value.trim().toUpperCase();
-      if (!code) return alert('Enter game code!');
-      location.href = `/monitor.html?gameId=${code}`;
-    };
+    document.getElementById("join-btn").addEventListener("click", () => {
+      const gameId = document.getElementById("game-id-input").value.toUpperCase();
+      const playerName = document.getElementById("player-name-input").value.trim();
+
+      if (gameId && playerName) {
+        localStorage.setItem("playerName", playerName);
+        socket.emit("joinGame", { gameId, playerName });
+      } else {
+        alert("Please enter both game code and your name");
+      }
+    });
+
+    socket.on("gameJoined", (gameId) => {
+      window.location.href = `/player.html?gameId=${gameId}`;
+    });
+
+    socket.on("error", (message) => {
+      alert(message);
+    });
   </script>
 </body>
 </html>
