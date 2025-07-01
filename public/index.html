@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Live Quiz Game</title>
   <link rel="stylesheet" href="style.css"/>
@@ -21,9 +21,15 @@
 
       <div class="option-box">
         <h3>Join a Game</h3>
-        <input type="text" id="game-id-input" placeholder="Enter Game Code" />
-        <input type="text" id="player-name-input" placeholder="Your Name" />
+        <input type="text" id="game-id-input" placeholder="Enter Game Code"/>
+        <input type="text" id="player-name-input" placeholder="Your Name"/>
         <button id="join-btn">Join Game</button>
+      </div>
+
+      <div class="option-box">
+        <h3>Monitor a Game</h3>
+        <input type="text" id="monitor-game-id-input" placeholder="Enter Game Code"/>
+        <button id="monitor-btn">Monitor Game</button>
       </div>
     </div>
   </div>
@@ -32,32 +38,32 @@
   <script>
     const socket = io();
 
-    document.getElementById("create-btn").addEventListener("click", () => {
-      socket.emit("createGame");
+    document.getElementById('create-btn').addEventListener('click', () => {
+      socket.emit('createGame');
     });
 
-    socket.on("gameCreated", (gameId) => {
+    socket.on('gameCreated', (gameId) => {
       window.location.href = `/host.html?gameId=${gameId}`;
     });
 
-    document.getElementById("join-btn").addEventListener("click", () => {
-      const gameId = document.getElementById("game-id-input").value.toUpperCase();
-      const playerName = document.getElementById("player-name-input").value.trim();
+    document.getElementById('join-btn').addEventListener('click', () => {
+      const gameId = document.getElementById('game-id-input').value.toUpperCase();
+      const playerName = document.getElementById('player-name-input').value;
 
       if (gameId && playerName) {
-        localStorage.setItem("playerName", playerName);
-        socket.emit("joinGame", { gameId, playerName });
+        window.location.href = `/player.html?gameId=${gameId}&playerName=${playerName}`;
       } else {
-        alert("Please enter both game code and your name");
+        alert('Please enter both game code and your name');
       }
     });
 
-    socket.on("gameJoined", (gameId) => {
-      window.location.href = `/player.html?gameId=${gameId}`;
-    });
-
-    socket.on("error", (message) => {
-      alert(message);
+    document.getElementById('monitor-btn').addEventListener('click', () => {
+      const monitorGameId = document.getElementById('monitor-game-id-input').value.toUpperCase();
+      if (monitorGameId) {
+        window.location.href = `/monitor.html?gameId=${monitorGameId}`;
+      } else {
+        alert('Please enter a game code');
+      }
     });
   </script>
 </body>
