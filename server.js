@@ -11,13 +11,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const games = {};
-const disconnectTimers = {};
-const questionTimers = {};
+const games = {}; // Stores game state
+const disconnectTimers = {}; // Stores disconnect cleanup timers
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
+  // Host creates game
   socket.on('createGame', () => {
     const gameId = generateGameId();
     games[gameId] = {
@@ -25,14 +25,14 @@ io.on('connection', (socket) => {
       host: socket.id,
       players: {},
       currentQuestion: 0,
-      questions: sampleQuestions(),
-      startTime: null
+      questions: sampleQuestions()
     };
     socket.join(gameId);
     socket.emit('gameCreated', gameId);
     console.log(`Game created with ID: ${gameId}`);
   });
 
+  // Host reconnects
   socket.on('reconnectHost', (gameId) => {
     if (games[gameId]) {
       clearDisconnectTimer(games[gameId].host);
@@ -43,22 +43,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('reconnectPlayer', ({ gameId, playerName }) => {
-    if (games[gameId] && games[gameId].players[playerName]) {
-      clearDisconnectTimer(games[gameId].players[playerName].socketId);
-      games[gameId].players[playerName].socketId = socket.id;
-      socket.join(gameId);
-      socket.emit('gameJoined', gameId);
-      io.to(games[gameId].host).emit('playerJoined', {
-        playerId: playerName,
-        playerName: playerName
-      });
-      console.log(`Player ${playerName} reconnected to game ${gameId}`);
-    } else {
-      socket.emit('error', 'Reconnection failed: Player not found');
-    }
-  });
-
+  // Player joins game
   socket.on('joinGame', ({ gameId, playerName }) => {
     gameId = gameId.toUpperCase();
     if (!games[gameId]) {
@@ -78,29 +63,43 @@ io.on('connection', (socket) => {
       playerId: playerName,
       playerName: playerName
     });
+
     console.log(`Player ${playerName} joined game ${gameId}`);
   });
 
+  // Player reconnects
+  socket.on('reconnectPlayer', ({ gameId, playerName }) => {
+    if (games[gameId] && games[gameId].players[playerName]) {
+      clearDisconnectTimer(games[gameId].players[playerName].socketId);
+      games[gameId].players[playerName].socketId = socket.id;
+      socket.join(gameId);
+      socket.emit('gameJoined', gameId);
+      io.to(games[gameId].host).emit('playerJoined', {
+        playerId: playerName,
+        playerName: playerName
+      });
+
+      console.log(`Player ${playerName} reconnected to game ${gameId}`);
+    } else {
+      socket.emit('error', 'Reconnection failed: Player not found');
+    }
+  });
+
+  // Start game
   socket.on('startGame', (gameId) => {
     if (games[gameId]?.host === socket.id) {
-      sendQuestion(gameId);
+      const q = games[gameId].questions[0];
+      io.to(gameId).emit('gameStarted');
+      io.to(gameId).emit('newQuestion', {
+        question: q.question,
+        options: q.options,
+        questionNumber: 1,
+        totalQuestions: games[gameId].questions.length
+      });
     }
   });
 
-  socket.on('nextQuestion', (gameId) => {
-    const game = games[gameId];
-    if (!game || game.host !== socket.id) return;
-
-    game.currentQuestion++;
-    if (game.currentQuestion < game.questions.length) {
-      sendQuestion(gameId);
-    } else {
-      const leaderboard = getLeaderboard(game);
-      io.to(gameId).emit('gameOver', { leaderboard });
-      io.to(`monitor-${gameId}`).emit('gameOver', { leaderboard });
-    }
-  });
-
+  // Submit answer
   socket.on('submitAnswer', ({ gameId, answer }) => {
     const game = games[gameId];
     if (!game) return;
@@ -110,20 +109,14 @@ io.on('connection', (socket) => {
 
     const currentQ = game.questions[game.currentQuestion];
     const isCorrect = answer === currentQ.correctAnswer;
-    let score = 0;
 
     if (isCorrect) {
-      const timeTaken = (Date.now() - game.startTime) / 1000;
-      if (timeTaken <= 5) score = 100;
-      else if (timeTaken <= 30) score = 50;
-      else score = 20;
-      game.players[playerName].score += score;
+      game.players[playerName].score++;
     }
 
     socket.emit('answerResult', {
       correct: isCorrect,
-      correctAnswer: currentQ.correctAnswer,
-      score
+      correctAnswer: currentQ.correctAnswer
     });
 
     io.to(game.host).emit('playerAnswered', {
@@ -133,40 +126,59 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Next question
+  socket.on('nextQuestion', (gameId) => {
+    const game = games[gameId];
+    if (!game || game.host !== socket.id) return;
+
+    game.currentQuestion++;
+    if (game.currentQuestion < game.questions.length) {
+      const q = game.questions[game.currentQuestion];
+      io.to(gameId).emit('newQuestion', {
+        question: q.question,
+        options: q.options,
+        questionNumber: game.currentQuestion + 1,
+        totalQuestions: game.questions.length
+      });
+    } else {
+      const leaderboard = getLeaderboard(game);
+      io.to(gameId).emit('gameOver', { leaderboard });
+    }
+  });
+
+  // Show leaderboard
   socket.on('showLeaderboard', (gameId) => {
     const game = games[gameId];
     if (!game) return;
+
     const leaderboard = getLeaderboard(game);
     io.to(gameId).emit('leaderboardUpdate', { leaderboard });
-    io.to(`monitor-${gameId}`).emit('leaderboardUpdate', { leaderboard });
   });
 
-  socket.on('monitorGame', (gameId) => {
-    if (!games[gameId]) {
-      socket.emit('error', 'Game not found');
-      return;
-    }
-    socket.join(`monitor-${gameId}`);
-    console.log(`Monitor joined game ${gameId}`);
-  });
-
+  // Disconnection handler
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id}`);
+
     for (const gameId in games) {
       const game = games[gameId];
+
       if (game.host === socket.id) {
+        console.log(`Host disconnected from ${gameId}, waiting 10s to remove...`);
         disconnectTimers[socket.id] = setTimeout(() => {
           io.to(gameId).emit('hostLeft');
           delete games[gameId];
+          console.log(`Game ${gameId} removed`);
         }, 10000);
         return;
       }
 
       const playerName = getPlayerNameBySocket(game, socket.id);
       if (playerName) {
+        console.log(`Player ${playerName} disconnected from ${gameId}, waiting 10s...`);
         disconnectTimers[socket.id] = setTimeout(() => {
           delete game.players[playerName];
           io.to(game.host).emit('playerLeft', playerName);
+          console.log(`Player ${playerName} removed from ${gameId}`);
         }, 10000);
         return;
       }
@@ -174,31 +186,12 @@ io.on('connection', (socket) => {
   });
 });
 
-// Utility Functions
-function sendQuestion(gameId) {
-  const game = games[gameId];
-  const q = game.questions[game.currentQuestion];
-
-  game.startTime = Date.now();
-  io.to(gameId).emit('newQuestion', {
-    question: q.question,
-    options: q.options,
-    questionNumber: game.currentQuestion + 1,
-    totalQuestions: game.questions.length
-  });
-  io.to(`monitor-${gameId}`).emit('newQuestion', {
-    question: q.question,
-    options: q.options,
-    questionNumber: game.currentQuestion + 1,
-    totalQuestions: game.questions.length
-  });
-
-  if (questionTimers[gameId]) clearTimeout(questionTimers[gameId]);
-  questionTimers[gameId] = setTimeout(() => {
-    const leaderboard = getLeaderboard(game);
-    io.to(gameId).emit('leaderboardUpdate', { leaderboard });
-    io.to(`monitor-${gameId}`).emit('leaderboardUpdate', { leaderboard });
-  }, 60000);
+// Utilities
+function clearDisconnectTimer(socketId) {
+  if (disconnectTimers[socketId]) {
+    clearTimeout(disconnectTimers[socketId]);
+    delete disconnectTimers[socketId];
+  }
 }
 
 function getPlayerNameBySocket(game, socketId) {
@@ -208,39 +201,35 @@ function getPlayerNameBySocket(game, socketId) {
   return null;
 }
 
-function clearDisconnectTimer(socketId) {
-  if (disconnectTimers[socketId]) {
-    clearTimeout(disconnectTimers[socketId]);
-    delete disconnectTimers[socketId];
-  }
+function getLeaderboard(game) {
+  return Object.values(game.players)
+    .map(p => ({ name: p.name, score: p.score }))
+    .sort((a, b) => b.score - a.score);
 }
 
 function generateGameId() {
-  return Math.random().toString(36).substring(2, 6).toUpperCase();
-}
-
-function getLeaderboard(game) {
-  return Object.values(game.players)
-    .sort((a, b) => b.score - a.score)
-    .map(p => ({ name: p.name, score: p.score }));
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 function sampleQuestions() {
   return [
     {
       question: "What is the capital of France?",
-      options: ["Paris", "London", "Rome", "Berlin"],
+      options: ["Paris", "London", "Berlin", "Madrid"],
       correctAnswer: "Paris"
     },
     {
-      question: "Which planet is known as the Red Planet?",
-      options: ["Earth", "Venus", "Mars", "Jupiter"],
-      correctAnswer: "Mars"
+      question: "What is 5 + 3?",
+      options: ["5", "7", "8", "9"],
+      correctAnswer: "8"
+    },
+    {
+      question: "What color is the sky?",
+      options: ["Green", "Blue", "Red", "Yellow"],
+      correctAnswer: "Blue"
     }
   ];
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
