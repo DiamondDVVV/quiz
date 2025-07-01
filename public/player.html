@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Quiz Player</title>
   <link rel="stylesheet" href="style.css"/>
@@ -9,17 +9,21 @@
 <body>
   <div class="container">
     <div id="waiting-screen">
-      <h1>Waiting for host...</h1>
+      <h1>Waiting for the host to start the game...</h1>
       <div class="loader"></div>
     </div>
 
     <div id="question-screen" class="hidden">
       <div class="question-header">
-        <span id="question-number"></span>
-        <span id="timer"></span>
+        <span id="question-number">Question 1/10</span>
+        <span id="timer">60s</span>
       </div>
-      <h2 id="question-text"></h2>
-      <div id="options-container"></div>
+
+      <div class="question-container">
+        <h2 id="question-text"></h2>
+        <div id="options-container"></div>
+      </div>
+
       <div id="feedback" class="hidden"></div>
     </div>
 
@@ -30,74 +34,156 @@
 
     <div id="game-over-screen" class="hidden">
       <h1>Game Over!</h1>
+      <h2>Final Results</h2>
       <div id="final-leaderboard"></div>
-      <button onclick="location.href='/'">New Game</button>
+      <button id="new-game-btn">New Game</button>
     </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const urlParams = new URLSearchParams(window.location.search);
-    const gameId = urlParams.get('gameId');
-    const playerName = urlParams.get('playerName');
+    const gameId = new URLSearchParams(location.search).get('gameId');
+    let playerName = localStorage.getItem('playerName');
+    if (!playerName) {
+      playerName = prompt("Enter your name:");
+      if (playerName) {
+        localStorage.setItem('playerName', playerName);
+      } else {
+        alert("Name is required!");
+        location.href = "/";
+      }
+    }
 
     socket.emit('reconnectPlayer', { gameId, playerName });
+
+    const waitingScreen = document.getElementById('waiting-screen');
+    const questionScreen = document.getElementById('question-screen');
+    const leaderboardScreen = document.getElementById('leaderboard-screen');
+    const gameOverScreen = document.getElementById('game-over-screen');
 
     const questionNumberElement = document.getElementById('question-number');
     const questionTextElement = document.getElementById('question-text');
     const optionsContainer = document.getElementById('options-container');
-    const timerElement = document.getElementById('timer');
     const feedbackElement = document.getElementById('feedback');
     const leaderboardElement = document.getElementById('leaderboard');
     const finalLeaderboardElement = document.getElementById('final-leaderboard');
+    const newGameBtn = document.getElementById('new-game-btn');
+    const timerElement = document.getElementById('timer');
+
+    let hasAnswered = false;
+    let countdown;
+
+    function startTimer(seconds) {
+      clearInterval(countdown);
+      let timeLeft = seconds;
+      timerElement.textContent = `${timeLeft}s`;
+      countdown = setInterval(() => {
+        timeLeft--;
+        timerElement.textContent = `${timeLeft}s`;
+        if (timeLeft <= 0) clearInterval(countdown);
+      }, 1000);
+    }
 
     socket.on('gameStarted', () => {
-      document.getElementById('waiting-screen').classList.add('hidden');
+      waitingScreen.classList.add('hidden');
+      questionScreen.classList.remove('hidden');
     });
 
-    socket.on('newQuestion', data => {
-      questionNumberElement.textContent = `Q${data.questionNumber}/${data.totalQuestions}`;
+    socket.on('newQuestion', (data) => {
+      hasAnswered = false;
+      questionNumberElement.textContent = `Question ${data.questionNumber}/${data.totalQuestions}`;
       questionTextElement.textContent = data.question;
       optionsContainer.innerHTML = '';
-      feedbackElement.classList.add('hidden');
 
-      data.options.forEach(opt => {
+      data.options.forEach(option => {
         const btn = document.createElement('button');
         btn.className = 'option-btn';
-        btn.textContent = opt;
-        btn.onclick = () => socket.emit('submitAnswer', { gameId, answer: opt });
+        btn.textContent = option;
+        btn.onclick = () => {
+          if (!hasAnswered) selectAnswer(option);
+        };
         optionsContainer.appendChild(btn);
       });
+
+      feedbackElement.classList.add('hidden');
+      leaderboardScreen.classList.add('hidden');
+      questionScreen.classList.remove('hidden');
+
+      startTimer(60);
     });
 
-    socket.on('timerUpdate', secs => {
-      timerElement.textContent = `${secs}s`;
-    });
-
-    socket.on('answerResult', data => {
+    socket.on('answerResult', (data) => {
+      hasAnswered = true;
       feedbackElement.classList.remove('hidden');
-      feedbackElement.textContent = data.correct ? 'Correct!' : `Wrong! Correct: ${data.correctAnswer}`;
+      feedbackElement.textContent = data.correct
+        ? `Correct! +${data.score}`
+        : `Incorrect. Correct answer: ${data.correctAnswer}`;
+      feedbackElement.className = data.correct
+        ? 'feedback correct score-info'
+        : 'feedback incorrect';
+
+      const btns = document.querySelectorAll('.option-btn');
+      btns.forEach(btn => {
+        btn.disabled = true;
+        if (btn.textContent === data.correctAnswer) {
+          btn.classList.add('correct-answer');
+        }
+      });
     });
 
-    socket.on('leaderboardUpdate', data => {
+    socket.on('leaderboardUpdate', (data) => {
+      clearInterval(countdown);
+      questionScreen.classList.add('hidden');
+      leaderboardScreen.classList.remove('hidden');
       leaderboardElement.innerHTML = '';
-      data.leaderboard.forEach((p, i) => {
-        leaderboardElement.innerHTML += `<div class="leaderboard-item"><span>${i + 1}</span> <span>${p.name}</span> <span>${p.score}</span></div>`;
+      data.leaderboard.forEach((player, index) => {
+        const div = document.createElement('div');
+        div.className = 'leaderboard-item';
+        div.innerHTML = `
+          <span class="rank">${index + 1}</span>
+          <span class="name">${player.name}</span>
+          <span class="score">${player.score}</span>
+        `;
+        leaderboardElement.appendChild(div);
       });
-      document.getElementById('question-screen').classList.add('hidden');
-      document.getElementById('leaderboard-screen').classList.remove('hidden');
     });
 
-    socket.on('gameOver', data => {
+    socket.on('gameOver', (data) => {
+      clearInterval(countdown);
+      questionScreen.classList.add('hidden');
+      leaderboardScreen.classList.add('hidden');
+      gameOverScreen.classList.remove('hidden');
       finalLeaderboardElement.innerHTML = '';
-      data.leaderboard.forEach((p, i) => {
-        finalLeaderboardElement.innerHTML += `<div class="leaderboard-item"><span>${i + 1}</span> <span>${p.name}</span> <span>${p.score}</span></div>`;
+      data.leaderboard.forEach((player, index) => {
+        const div = document.createElement('div');
+        div.className = 'leaderboard-item';
+        div.innerHTML = `
+          <span class="rank">${index + 1}</span>
+          <span class="name">${player.name}</span>
+          <span class="score">${player.score}</span>
+        `;
+        finalLeaderboardElement.appendChild(div);
       });
-      document.getElementById('question-screen').classList.add('hidden');
-      document.getElementById('leaderboard-screen').classList.add('hidden');
-      document.getElementById('game-over-screen').classList.remove('hidden');
     });
+
+    socket.on('hostLeft', () => {
+      alert('Host left the game.');
+      location.href = '/';
+    });
+
+    newGameBtn.onclick = () => {
+      location.href = '/';
+    };
+
+    function selectAnswer(answer) {
+      hasAnswered = true;
+      socket.emit('submitAnswer', { gameId, answer });
+      const btns = document.querySelectorAll('.option-btn');
+      btns.forEach(btn => {
+        if (btn.textContent !== answer) btn.disabled = true;
+      });
+    }
   </script>
 </body>
 </html>
